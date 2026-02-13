@@ -16,7 +16,7 @@ import SwiftUI
 
 // MARK: - View Extension
 
-extension View {
+public extension View {
     func onSwipe(
         sensitivity: CGFloat = 1.0,
         minDistance: CGFloat? = nil,
