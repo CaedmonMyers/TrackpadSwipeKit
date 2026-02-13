@@ -17,7 +17,7 @@ import SwiftUI
 // MARK: - View Extension
 
 public extension View {
-    func onSwipe(
+    func onTrackpadSwipe(
         sensitivity: CGFloat = 1.0,
         minDistance: CGFloat? = nil,
         maxDistance: CGFloat? = nil,
