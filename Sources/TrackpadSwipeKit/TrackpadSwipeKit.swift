@@ -17,10 +17,11 @@ import SwiftUI
 // MARK: - View Extension
 
 public extension View {
-    func onTrackpadSwipe(
+    func onSwipe(
         sensitivity: CGFloat = 1.0,
         minDistance: CGFloat? = nil,
         maxDistance: CGFloat? = nil,
+        threshold: CGFloat = 10,
         onSwipe: @escaping (CGFloat) -> Void,
         onSwipeEnded: @escaping (CGFloat) -> Void
     ) -> some View {
@@ -30,7 +31,8 @@ public extension View {
                 onSwipeEnded: onSwipeEnded,
                 sensitivity: sensitivity,
                 minDistance: minDistance,
-                maxDistance: maxDistance
+                maxDistance: maxDistance,
+                threshold: threshold
             )
         )
     }
@@ -38,14 +40,15 @@ public extension View {
 
 // MARK: - View Modifier
 
-struct SwipeGestureModifier: ViewModifier {
+public struct SwipeGestureModifier: ViewModifier {
     var onSwipe: (CGFloat) -> Void
     var onSwipeEnded: (CGFloat) -> Void
     var sensitivity: CGFloat
     var minDistance: CGFloat?
     var maxDistance: CGFloat?
+    var threshold: CGFloat
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         content
             .overlay(
                 SwipableView(
@@ -53,7 +56,8 @@ struct SwipeGestureModifier: ViewModifier {
                     onSwipeEnded: onSwipeEnded,
                     sensitivity: sensitivity,
                     minDistance: minDistance,
-                    maxDistance: maxDistance
+                    maxDistance: maxDistance,
+                    threshold: threshold
                 )
                 .allowsHitTesting(true)
             )
@@ -68,6 +72,7 @@ struct SwipableView: NSViewRepresentable {
     var sensitivity: CGFloat = 1.0
     var minDistance: CGFloat? = nil
     var maxDistance: CGFloat? = nil
+    var threshold: CGFloat = 10
 
     func makeNSView(context: Context) -> SwipeDetectingView {
         let view = SwipeDetectingView()
@@ -76,6 +81,7 @@ struct SwipableView: NSViewRepresentable {
         view.sensitivity = sensitivity
         view.minDistance = minDistance
         view.maxDistance = maxDistance
+        view.threshold = threshold
         return view
     }
 
@@ -85,6 +91,7 @@ struct SwipableView: NSViewRepresentable {
         nsView.sensitivity = sensitivity
         nsView.minDistance = minDistance
         nsView.maxDistance = maxDistance
+        nsView.threshold = threshold
     }
 }
 
@@ -96,10 +103,12 @@ class SwipeDetectingView: NSView {
     var sensitivity: CGFloat = 1.0
     var minDistance: CGFloat? = nil
     var maxDistance: CGFloat? = nil
+    var threshold: CGFloat = 10
 
     private var panGestureRecognizer: NSPanGestureRecognizer!
     private var totalTranslation: CGFloat = 0
     private var isTracking = false
+    private var gestureActivated = false
     private var scrollMomentumTimer: Timer?
 
     override init(frame frameRect: NSRect) {
@@ -147,17 +156,29 @@ class SwipeDetectingView: NSView {
         case .began:
             totalTranslation = 0
             isTracking = true
+            gestureActivated = false
 
         case .changed:
             totalTranslation = horizontalDistance
-            let clampedDistance = clampDistance(totalTranslation)
-            onSwipe?(clampedDistance)
+
+            // Only activate if threshold is exceeded
+            if !gestureActivated && abs(totalTranslation) >= threshold {
+                gestureActivated = true
+            }
+
+            if gestureActivated {
+                let clampedDistance = clampDistance(totalTranslation)
+                onSwipe?(clampedDistance)
+            }
 
         case .ended, .cancelled:
-            let clampedDistance = clampDistance(totalTranslation)
-            onSwipeEnded?(clampedDistance)
+            if gestureActivated {
+                let clampedDistance = clampDistance(totalTranslation)
+                onSwipeEnded?(clampedDistance)
+            }
             totalTranslation = 0
             isTracking = false
+            gestureActivated = false
 
         default:
             break
@@ -166,40 +187,68 @@ class SwipeDetectingView: NSView {
 
     // Handle trackpad swipes via scrollWheel events
     override func scrollWheel(with event: NSEvent) {
+        let deltaX = event.scrollingDeltaX
+        let deltaY = event.scrollingDeltaY
+
+        // Check if this is primarily vertical scrolling
+        let isVerticalScrolling = abs(deltaY) > abs(deltaX)
+
+        // If vertical scrolling is dominant, pass through to allow normal scrolling
+        if isVerticalScrolling && !gestureActivated {
+            super.scrollWheel(with: event)
+            return
+        }
+
         // Cancel any existing momentum timer
         scrollMomentumTimer?.invalidate()
-
-        // Use deltaX for horizontal scrolling
-        let deltaX = event.scrollingDeltaX
 
         if event.phase == .began {
             totalTranslation = 0
             isTracking = true
+            gestureActivated = false
         }
 
         if event.phase == .changed || event.phase == [] {
             totalTranslation += deltaX
-            let clampedDistance = clampDistance(totalTranslation)
-            onSwipe?(clampedDistance)
+
+            // Only activate gesture if horizontal threshold is exceeded
+            if !gestureActivated && abs(totalTranslation) >= threshold {
+                gestureActivated = true
+            }
+
+            // Only send callbacks if gesture is activated
+            if gestureActivated {
+                let clampedDistance = clampDistance(totalTranslation)
+                onSwipe?(clampedDistance)
+            } else if !isTracking {
+                // If we're not tracking and not activated, pass through
+                super.scrollWheel(with: event)
+            }
         }
 
         if event.phase == .ended || event.phase == .cancelled {
-            let clampedDistance = clampDistance(totalTranslation)
-            onSwipeEnded?(clampedDistance)
+            if gestureActivated {
+                let clampedDistance = clampDistance(totalTranslation)
+                onSwipeEnded?(clampedDistance)
+            }
 
             // Set a short timer to reset after momentum ends
             scrollMomentumTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
                 self?.totalTranslation = 0
                 self?.isTracking = false
+                self?.gestureActivated = false
             }
         }
 
         // Handle momentum phase separately
         if event.momentumPhase == .ended {
-            let clampedDistance = clampDistance(totalTranslation)
-            onSwipeEnded?(clampedDistance)
+            if gestureActivated {
+                let clampedDistance = clampDistance(totalTranslation)
+                onSwipeEnded?(clampedDistance)
+            }
             totalTranslation = 0
             isTracking = false
+            gestureActivated = false
         }
     }
 }
