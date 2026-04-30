@@ -1,5 +1,5 @@
 # TrackpadSwipeKit
-![Static Badge](https://img.shields.io/badge/Platforms-macOS%2011+-h)
+![Static Badge](https://img.shields.io/badge/Platforms-macOS%2011+-h) [![Swift](https://github.com/CaedmonMyers/TrackpadSwipeKit/actions/workflows/swift.yml/badge.svg)](https://github.com/CaedmonMyers/TrackpadSwipeKit/actions/workflows/swift.yml)
 
 TrackpadSwipeKit adds SwiftUI view modifiers to detect trackpad or magic mouse horizontal swipe gestures and measure their distance.
 
